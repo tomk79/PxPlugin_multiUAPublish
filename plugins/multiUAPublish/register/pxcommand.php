@@ -174,6 +174,25 @@ function contEditPublishTargetPathApply(formElm){
 			$src .= '			<th style="width:30%;">適用するテーマ</th>'."\n";
 			$src .= '			<td style="width:70%;">'.t::h($this->px->get_conf('system.default_theme_id')).'</td>'."\n";
 			$src .= '		</tr>'."\n";
+			$src .= '		<tr>'."\n";
+			$src .= '			<th style="width:30%;">USER_AGENT</th>'."\n";
+			$src .= '			<td style="width:70%;">';
+			$src .= '<ul>';
+			$src .= '<li>(default) = '.t::h($this->crawler_user_agent).'</li>';
+			foreach( $this->multiDevice_user_agent_list as $key=>$val ){
+				$src .= '<li>'.t::h($key).' = '.t::h($val).' ('.t::h($this->crawler_user_agent).')</li>';
+			}
+			$src .= '</ul>';
+			$src .= '<p>この設定は、mainconf.ini の plugin-multiUAPublish.ua の項目で変更できます。</p>'."\n";
+			$src .= '	<div class="code"><pre><code>[plugin-multiUAPublish]'."\n";
+			$src .= '; プラグイン &quot;multiUAPublish&quot; 拡張項目'."\n";
+			$src .= 'ua = &quot;'."\n";
+			$src .= 'sp=iPhone'."\n";
+			$src .= 'tb=iPad'."\n";
+			$src .= '&quot;;'."\n";
+			$src .= '</code></pre></div>'."\n";
+			$src .= '</td>'."\n";
+			$src .= '		</tr>'."\n";
 			$src .= '	</tbody>'."\n";
 			$src .= '</table><!-- /table.def -->'."\n";
 			$src .= ''."\n";
@@ -440,6 +459,25 @@ function contEditPublishTargetPathApply(formElm){
 	 * @return true
 	 */
 	private function setup(){
+		// multhUAPublish 拡張
+		$plugin_conf_ua = $this->px->get_conf('plugin-multiUAPublish.ua');
+		$plugin_conf_ua = preg_replace('/\r\n|\r|\n/', '&', $plugin_conf_ua);
+			//  ↑改行は項目の区切りとして認識する。
+			//  　カンマとセミコロンは、USER_AGENTに含まれる場合があるので、区切り文字として使用しない。
+		parse_str(trim( $plugin_conf_ua ), $plugin_conf_ua);
+		if( count($plugin_conf_ua) ){
+			$tmp_plugin_conf_ua = array();
+			foreach( $plugin_conf_ua as $key=>$val ){// 前後のホワイトスペースをトル
+				$tmp_plugin_conf_ua[trim($key)] = trim($val);
+			}
+			$plugin_conf_ua = $tmp_plugin_conf_ua;
+			unset($tmp_plugin_conf_ua);
+
+			$this->multiDevice_user_agent_list = $plugin_conf_ua;
+			unset($plugin_conf_ua);
+		}
+		// / multhUAPublish 拡張
+
 		$this->path_docroot_dir = t::realpath('.').'/';
 		if( strlen($this->px->get_conf('publish.path_publish_dir')) && @is_dir($this->px->get_conf('publish.path_publish_dir')) ){
 			$this->path_publish_dir = t::realpath($this->px->get_conf('publish.path_publish_dir')).'/';
