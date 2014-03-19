@@ -891,9 +891,11 @@ var_dump($this->px->dbh()->get_cmd_stdout( escapeshellarg($path_ruby).' -v' ));
 			return false;
 		}
 		$path_php_tmpfile = $this->path_tmppublish_dir.'/screenShot/_tmp_capybaraCmd.php';
+		$path_php_phantom_tmpfile = $this->path_tmppublish_dir.'/screenShot/_tmp_phantomCmd.php';
 		$path_html_tmpfile = $this->path_tmppublish_dir.'/screenShot/_tmp_preview.html';
 		// $path_ruby = $this->px->get_conf('commands.ruby');
 		$path_ruby = 'ruby';
+		$path_phantom = 'phantomjs';
 		$ua_list = array(
 			array('width'=>1024, 'ua'=>'Chrome'),
 			// array('width'=>800, 'ua'=>'iPad'),
@@ -904,6 +906,10 @@ var_dump($this->px->dbh()->get_cmd_stdout( escapeshellarg($path_ruby).' -v' ));
 		$php_src .= '/* '.t::text2html($url).' */'."\n";
 		$php_src .= 'print '.t::data2text($url).'."\n";'."\n";
 
+		$php_phantom_src = '';
+		$php_phantom_src .= '/* '.t::text2html($url).' */'."\n";
+		$php_phantom_src .= 'print '.t::data2text($url).'."\n";'."\n";
+
 		$html_src = '';
 		$html_src .= '<!-- '.t::text2html($url).' -->'."\n";
 		$html_src .= '<div class="page_unit">'."\n";
@@ -913,7 +919,7 @@ var_dump($this->px->dbh()->get_cmd_stdout( escapeshellarg($path_ruby).' -v' ));
 
 		foreach( $ua_list as $ua ){
 			$cmd = escapeshellarg($path_ruby)
-				.' '.escapeshellarg('./_capybaraWebkit.rb')
+				.' '.escapeshellarg('./_cmd/_capybaraWebkit.rb')
 				.' '.escapeshellarg($url)
 				.' '.escapeshellarg('./img/'.md5($url).'_'.$ua['width'].'.png')
 				.' '.escapeshellarg($ua['width'])
@@ -922,6 +928,17 @@ var_dump($this->px->dbh()->get_cmd_stdout( escapeshellarg($path_ruby).' -v' ));
 			$php_src .= 'print "'.escapeshellcmd($ua['width']).' ";'."\n";
 			$php_src .= 'exec("'.escapeshellcmd($cmd).'");'."\n";
 			$php_src .= 'print "done."."\n";'."\n";
+			$cmd = escapeshellarg($path_phantom)
+				.' '.escapeshellarg('./_cmd/_phantom_capture.rb')
+				.' '.escapeshellarg($url)
+				.' '.escapeshellarg('./img/'.md5($url).'_'.$ua['width'].'.png')
+				.' '.escapeshellarg($ua['width'])
+				.' '.escapeshellarg(640)
+				.' '.escapeshellarg('Google Chrome')
+			;
+			$php_phantom_src .= 'print "'.escapeshellcmd($ua['width']).' ";'."\n";
+			$php_phantom_src .= 'exec("'.escapeshellcmd($cmd).'");'."\n";
+			$php_phantom_src .= 'print "done."."\n";'."\n";
 			$html_src .= '<td><img src="./img/'.md5($url).'_'.$ua['width'].'.png" alt="" /></td>'."\n";
 		}
 		$html_src .= '</tr>'."\n";
@@ -930,6 +947,7 @@ var_dump($this->px->dbh()->get_cmd_stdout( escapeshellarg($path_ruby).' -v' ));
 
 		error_log( $html_src, 3, $path_html_tmpfile );
 		error_log( $php_src, 3, $path_php_tmpfile );
+		error_log( $php_phantom_src, 3, $path_php_phantom_tmpfile );
 		return true;
 	}
 	/**
@@ -944,7 +962,17 @@ var_dump($this->px->dbh()->get_cmd_stdout( escapeshellarg($path_ruby).' -v' ));
 		$fin .= 'mkdir(\'./img/\');'."\n";
 		$fin .= $this->px->dbh()->file_get_contents($path_cmd);
 		$fin .= '?'.'>';
-		$this->px->dbh()->file_overwrite( $this->path_tmppublish_dir.'/screenShot/screenShot.php', $fin );
+		$this->px->dbh()->file_overwrite( $this->path_tmppublish_dir.'/screenShot/screenShotCapybara.php', $fin );
+		unlink($path_cmd);
+
+		$path_cmd = $this->path_tmppublish_dir.'/screenShot/_tmp_phantomCmd.php';
+		$fin = '';
+		$fin .= '<'.'?php'."\n";
+		$fin .= 'chdir(dirname(__FILE__));'."\n";
+		$fin .= 'mkdir(\'./img/\');'."\n";
+		$fin .= $this->px->dbh()->file_get_contents($path_cmd);
+		$fin .= '?'.'>';
+		$this->px->dbh()->file_overwrite( $this->path_tmppublish_dir.'/screenShot/screenShotPhantom.php', $fin );
 		unlink($path_cmd);
 
 		$path_html_body = $this->path_tmppublish_dir.'/screenShot/_tmp_preview.html';
@@ -984,9 +1012,15 @@ img{
 		$this->px->dbh()->file_overwrite( $this->path_tmppublish_dir.'/screenShot/index.html', $fin );
 		unlink($path_html_body);
 
+		$this->px->dbh()->mkdir( $this->path_tmppublish_dir.'/screenShot/_cmd/' );
 		$this->px->dbh()->copy(
-			$this->px->dbh()->get_realpath( $this->px->get_conf('paths.px_dir').'plugins/multiUAPublish/libs/capybara/capybaraWebkit.rb' ),
-			$this->path_tmppublish_dir.'/screenShot/_capybaraWebkit.rb'
+			$this->px->dbh()->get_realpath( $this->px->get_conf('paths.px_dir').'plugins/multiUAPublish/libs/capybara/_capybaraWebkit.rb' ),
+			$this->path_tmppublish_dir.'/screenShot/_cmd/_capybaraWebkit.rb'
+		);
+
+		$this->px->dbh()->copy(
+			$this->px->dbh()->get_realpath( $this->px->get_conf('paths.px_dir').'plugins/multiUAPublish/libs/phantom/_phantom_capture.js' ),
+			$this->path_tmppublish_dir.'/screenShot/_cmd/_phantom_capture.rb'
 		);
 
 		return true;
