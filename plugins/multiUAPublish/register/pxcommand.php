@@ -100,7 +100,7 @@ function contEditPublishTargetPath(){
 }
 function contEditPublishTargetPathApply(formElm){
 	var path = $('input[name=path]', formElm).val();
-	window.location.href = path + '?PX=publish&path_target='+encodeURIComponent(path);
+	window.location.href = path + '?PX=plugins.multiUAPublish&path_target='+encodeURIComponent(path);
 }
 </script>
 <?php
@@ -389,6 +389,10 @@ function contEditPublishTargetPathApply(formElm){
 		}
 		print 'done.'."\n";
 		print ''."\n";
+		print 'making screenshot command...'."\n";
+		$this->screenshot_unite_commands();
+		print 'done.'."\n";
+		print ''."\n";
 
 		// プラグインによる加工処理
 		//   パブリッシュの後処理 after_execute() を実施
@@ -549,6 +553,13 @@ function contEditPublishTargetPathApply(formElm){
 				$this->clear_publish_dir_rmdir_all( '/'.$filename );
 			}
 		}
+		$files = $this->px->dbh()->ls( $this->path_tmppublish_dir.'/screenShot' );
+		if( is_array( $files ) ){
+			foreach( $files as $filename ){
+				$this->px->dbh()->rm( $this->path_tmppublish_dir.'/screenShot/'.$filename );
+				print 'screenShot/'.$filename."\n";
+			}
+		}
 		$this->px->dbh()->rm( $this->path_tmppublish_dir.'/publish_log.txt' );
 		$this->px->dbh()->rm( $this->path_tmppublish_dir.'/publish_error_log.txt' );
 		$this->px->dbh()->rm( $this->path_tmppublish_dir.'/readme.txt' );
@@ -557,7 +568,7 @@ function contEditPublishTargetPathApply(formElm){
 	/**
 	 * パブリッシュディレクトリ内のパスを中身ごと完全に削除する
 	 */
-	function clear_publish_dir_rmdir_all( $path_original ){
+	private function clear_publish_dir_rmdir_all( $path_original ){
 		$path = $this->path_tmppublish_dir.'/htdocs'.$path_original;
 		$path = preg_replace('/^\/+/s','/',$path);
 		if( strlen( $this->px->get_conf('system.filesystem_encoding') ) ){
@@ -722,6 +733,13 @@ function contEditPublishTargetPathApply(formElm){
 				$url = 'http'.($this->px->req()->is_ssl()?'s':'').'://'.$_SERVER['HTTP_HOST'].$this->px->dbh()->get_realpath($path);
 				$result = $this->publish_single_dynamic_contents($url, $this->path_tmppublish_dir.'/htdocs/'.$path, $this->crawler_user_agent);
 				if( $extension == 'html' ){
+					// ついでにスクリーンショットを作成する
+					$this->px->dbh()->mkdir( $this->path_tmppublish_dir.'screenShot/' );
+					$this->screenshot_single_dynamic_contents($url);
+					// $this->screenshot_single_dynamic_contents($url, $this->path_tmppublish_dir.'/screenShot/'.md5($url).'_1024.png', 1024, 680, $this->crawler_user_agent);
+					// $this->screenshot_single_dynamic_contents($url, $this->path_tmppublish_dir.'/screenShot/'.md5($url).'_800.png', 800, 680, $this->crawler_user_agent);
+					// $this->screenshot_single_dynamic_contents($url, $this->path_tmppublish_dir.'/screenShot/'.md5($url).'_320.png', 320, 680, $this->crawler_user_agent);
+
 					foreach( $this->multiDevice_user_agent_list as $device_type_id=>$user_agent_string ){
 						// other devices
 						$tmp_path = t::trimext($this->path_tmppublish_dir.'/htdocs/'.$path).'@'.$device_type_id.'.html';
@@ -840,6 +858,138 @@ function contEditPublishTargetPathApply(formElm){
 		}
 
 		return $result;
+	}
+
+	/**
+	 * multiUAPublishカスタム：単体の動的コンテンツのスクリーンショットを作成する
+	 */
+	private function screenshot_single_dynamic_contents($url){
+		/*
+		#	現在のディレクトリを記憶
+		$MEMORY_CDIR = realpath('.');
+
+		$path_script = $this->px->dbh()->get_realpath( $this->px->get_conf('paths.px_dir').'plugins/multiUAPublish/libs/capybara/capybaraWebkit.rb' );
+		chdir( dirname($path_script) );
+		$path_ruby = $this->px->get_conf('commands.ruby');
+
+		$cmd = escapeshellarg($path_ruby)
+			.' '.escapeshellarg($path_script)
+			.' '.escapeshellarg($url)
+			.' '.escapeshellarg($path)
+			.' '.escapeshellarg($width)
+			.' '.escapeshellarg($height)
+		;
+
+		$stdout = $this->px->dbh()->get_cmd_stdout( $cmd );
+var_dump($stdout);
+var_dump($this->px->dbh()->get_cmd_stdout( escapeshellarg($path_ruby).' -v' ));
+
+		chdir($MEMORY_CDIR);
+		*/
+
+		if( !$this->px->dbh()->mkdir($this->path_tmppublish_dir.'/screenShot/') ){
+			return false;
+		}
+		$path_php_tmpfile = $this->path_tmppublish_dir.'/screenShot/_tmp_capybaraCmd.php';
+		$path_html_tmpfile = $this->path_tmppublish_dir.'/screenShot/_tmp_preview.html';
+		// $path_ruby = $this->px->get_conf('commands.ruby');
+		$path_ruby = 'ruby';
+		$ua_list = array(
+			array('width'=>1024, 'ua'=>'Chrome'),
+			// array('width'=>800, 'ua'=>'iPad'),
+			array('width'=>320, 'ua'=>'iPhone'),
+		);
+
+		$php_src = '';
+		$php_src .= '/* '.t::text2html($url).' */'."\n";
+		$php_src .= 'print '.t::data2text($url).'."\n";'."\n";
+
+		$html_src = '';
+		$html_src .= '<!-- '.t::text2html($url).' -->'."\n";
+		$html_src .= '<div class="page_unit">'."\n";
+		$html_src .= '<h2>'.t::data2text($url).'</h2>'."\n";
+		$html_src .= '<table>'."\n";
+		$html_src .= '<tr>'."\n";
+
+		foreach( $ua_list as $ua ){
+			$cmd = escapeshellarg($path_ruby)
+				.' '.escapeshellarg('./_capybaraWebkit.rb')
+				.' '.escapeshellarg($url)
+				.' '.escapeshellarg('./img/'.md5($url).'_'.$ua['width'].'.png')
+				.' '.escapeshellarg($ua['width'])
+				.' '.escapeshellarg(640)
+			;
+			$php_src .= 'print "'.escapeshellcmd($ua['width']).' ";'."\n";
+			$php_src .= 'exec("'.escapeshellcmd($cmd).'");'."\n";
+			$php_src .= 'print "done."."\n";'."\n";
+			$html_src .= '<td><img src="./img/'.md5($url).'_'.$ua['width'].'.png" alt="" /></td>'."\n";
+		}
+		$html_src .= '</tr>'."\n";
+		$html_src .= '</table>'."\n";
+		$html_src .= '</div><!-- /.page_unit -->'."\n";
+
+		error_log( $html_src, 3, $path_html_tmpfile );
+		error_log( $php_src, 3, $path_php_tmpfile );
+		return true;
+	}
+	/**
+	 * multiUAPublishカスタム：コマンドのパーツを結合する
+	 */
+	private function screenshot_unite_commands($url){
+
+		$path_cmd = $this->path_tmppublish_dir.'/screenShot/_tmp_capybaraCmd.php';
+		$fin = '';
+		$fin .= '<'.'?php'."\n";
+		$fin .= 'chdir(dirname(__FILE__));'."\n";
+		$fin .= 'mkdir(\'./img/\');'."\n";
+		$fin .= $this->px->dbh()->file_get_contents($path_cmd);
+		$fin .= '?'.'>';
+		$this->px->dbh()->file_overwrite( $this->path_tmppublish_dir.'/screenShot/screenShot.php', $fin );
+		unlink($path_cmd);
+
+		$path_html_body = $this->path_tmppublish_dir.'/screenShot/_tmp_preview.html';
+		$fin = '';
+		$fin .= '<html>'."\n";
+		$fin .= '<head>'."\n";
+		$fin .= '<title>preview '.t::h( date('Y-m-d H:i:s') ).'</title>'."\n";
+		ob_start();
+?>
+<style type="text/css">
+*{
+	font-size:xx-small;
+}
+.page_unit{
+	page-break-after: always;
+}
+table{
+	width:100%;
+}
+table td{
+	vertical-align:top;
+	text-align:center;
+	padding:2pt;
+}
+img{
+	max-width:60%;
+	max-height:100%;
+}
+</style>
+<?php
+		$fin .= ob_get_clean();
+		$fin .= '</head>'."\n";
+		$fin .= '<body>'."\n";
+		$fin .= $this->px->dbh()->file_get_contents($path_html_body);
+		$fin .= '</body>'."\n";
+		$fin .= '</html>';
+		$this->px->dbh()->file_overwrite( $this->path_tmppublish_dir.'/screenShot/index.html', $fin );
+		unlink($path_html_body);
+
+		$this->px->dbh()->copy(
+			$this->px->dbh()->get_realpath( $this->px->get_conf('paths.px_dir').'plugins/multiUAPublish/libs/capybara/capybaraWebkit.rb' ),
+			$this->path_tmppublish_dir.'/screenShot/_capybaraWebkit.rb'
+		);
+
+		return true;
 	}
 
 	/**
